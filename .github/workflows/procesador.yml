@@ -1,0 +1,109 @@
+name: Micro2 - Procesador CI/CD
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'services/micro2-procesador/**'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'services/micro2-procesador/**'
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: notification-system/micro2-procesador
+  EKS_CLUSTER: notification-system-eks
+  K8S_NAMESPACE: notificaciones
+
+jobs:
+  # ─────────────────────────────────────────
+  # JOB 1 — BUILD Y TEST
+  # ─────────────────────────────────────────
+  build:
+    name: Build y Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Configurar Java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Cache de Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('services/micro2-procesador/**/*.gradle*') }}
+          restore-keys: gradle-
+
+      - name: Compilar y testear
+        working-directory: services/micro2-procesador
+        run: ./gradlew build --no-daemon -x test
+
+      - name: Publicar resultados de tests
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: micro2-test-results
+          path: services/micro2-procesador/build/reports/tests/
+
+  # ─────────────────────────────────────────
+  # JOB 2 — BUILD Y PUSH DOCKER
+  # ─────────────────────────────────────────
+  deploy:
+    name: Build Docker y Deploy
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Configurar credenciales AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login al ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build y Push imagen Docker
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        working-directory: services/micro2-procesador
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+      - name: Configurar kubectl
+        uses: aws-actions/amazon-eks-action@v1
+        with:
+          cluster-name: ${{ env.EKS_CLUSTER }}
+          region: ${{ env.AWS_REGION }}
+
+      - name: Deploy en EKS
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          kubectl set image deployment/micro2-procesador \
+            micro2=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+            -n ${{ env.K8S_NAMESPACE }}
+          kubectl rollout status deployment/micro2-procesador \
+            -n ${{ env.K8S_NAMESPACE }}
