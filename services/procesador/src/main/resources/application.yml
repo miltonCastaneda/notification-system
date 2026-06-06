@@ -1,0 +1,58 @@
+spring:
+  application:
+    name: micro2-procesador
+
+  # ─────────────────────────────────────────
+  # KAFKA
+  # ─────────────────────────────────────────
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: micro2-procesador-group
+
+
+  # ─────────────────────────────────────────
+  # MONGODB
+  # ─────────────────────────────────────────
+  data:
+    mongodb:
+      uri: mongodb://notifadmin:NotifLocal2024@localhost:27017/notificaciones?authSource=admin
+      database: notificaciones
+
+    # ─────────────────────────────────────────
+    # REDIS — cache de enviados
+    # ─────────────────────────────────────────
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 2000ms
+
+# ─────────────────────────────────────────
+# TOPICS DE KAFKA
+# ─────────────────────────────────────────
+kafka:
+  topics:
+    notificaciones-pendientes: notificaciones-pendientes
+
+# ─────────────────────────────────────────
+# CONFIGURACION DE ENVIO
+# ─────────────────────────────────────────
+envio:
+  ttl-enviados-horas: 24
+  # Tiempo máximo en estado PROCESANDO antes de considerarlo huérfano
+  procesando-timeout-minutos: 10
+
+# ─────────────────────────────────────────
+# ACTUATOR
+# ─────────────────────────────────────────
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, metrics
+  endpoint:
+    health:
+      show-details: always
+
+server:
+  port: 8081

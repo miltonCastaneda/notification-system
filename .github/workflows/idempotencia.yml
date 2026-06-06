@@ -47,7 +47,7 @@ jobs:
           restore-keys: gradle-
 
       - name: Compilar y testear
-        working-directory: services/idempotencia
+        working-directory: ./services/idempotencia
         run: ./gradlew build --no-daemon
 
       - name: Publicar resultados de tests
